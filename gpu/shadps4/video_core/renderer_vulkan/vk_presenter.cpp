@@ -498,6 +498,7 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
     // sotc: the frame image is 10-bit so a BT.2020 PQ (HDR) game image keeps its precision on the
     // way to the HDR swapchain; the blit converts it for an 8-bit SDR swapchain.
     pp_pass.Create(device, FrameFormat);
+    blur_bars_pass.Create(device, instance.GetAllocator());
 
 }
 
@@ -983,10 +984,18 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
                                    vk::PipelineStageFlagBits::eTransfer,
                                    vk::DependencyFlagBits::eByRegion, {}, {}, to_transfer);
-            cmdbuf.clearColorImage(swapchain_image, vk::ImageLayout::eTransferDstOptimal,
-                                   vk::ClearColorValue{std::array<float, 4>{0.f, 0.f, 0.f, 1.f}},
-                                   color_range);
             const auto rect = FitImage(frame->width, frame->height, extent.width, extent.height);
+            // sotc: bars around a game image of another aspect ratio show it blurred (as
+            // ultrawide-overlay does) unless SOTC_BAR_BLUR=0.
+            const bool has_bars = rect.extent.width < extent.width || rect.extent.height < extent.height;
+            if (has_bars && HostPasses::BlurBarsPass::Passes() > 0) {
+                blur_bars_pass.Render(cmdbuf, frame->image, {frame->width, frame->height},
+                                      swapchain_image, extent);
+            } else {
+                cmdbuf.clearColorImage(
+                    swapchain_image, vk::ImageLayout::eTransferDstOptimal,
+                    vk::ClearColorValue{std::array<float, 4>{0.f, 0.f, 0.f, 1.f}}, color_range);
+            }
             const vk::ImageBlit blit{
                 .srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                 .srcOffsets = std::array{vk::Offset3D{0, 0, 0},

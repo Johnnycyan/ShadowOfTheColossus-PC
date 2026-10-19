@@ -7,6 +7,7 @@
 
 #include "core/libraries/videoout/buffer.h"
 #include <imgui.h> // sotc port: ImTextureID only
+#include "video_core/renderer_vulkan/host_passes/blur_bars_pass.h"
 #include "video_core/renderer_vulkan/host_passes/fsr_pass.h"
 #include "video_core/renderer_vulkan/host_passes/pp_pass.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -119,6 +120,7 @@ private:
     HostPasses::FsrPass::Settings fsr_settings{};
     HostPasses::PostProcessingPass::Settings pp_settings{};
     HostPasses::PostProcessingPass pp_pass;
+    HostPasses::BlurBarsPass blur_bars_pass;
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;
     Scheduler present_scheduler;
