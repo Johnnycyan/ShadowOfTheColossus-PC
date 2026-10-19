@@ -41,26 +41,35 @@ MODES = {
 ASPECT_SITE = 0x00495b3e
 ASPECT_ORIGINAL = bytes.fromhex('c74304398ee33f')
 ASPECT_MODE = re.compile(r'^aspect(\d+)x(\d+)$')
-# renderWxH (experimental, PS4 Pro mode only): the display buffers (3840x2160) and the render
-# size (2560x1440) the game picks for a PS4 Pro both become WxH, e.g. 3440x1440 for 21:9.
+# displayWxH and renderWxH (experimental, PS4 Pro mode only; use both for 21:9, e.g. 3072x1280
+# upscaled to 3440x1440). W must be a multiple of 512: other widths pad the tiled rows and
+# streaks appeared on characters and in the sky (3456x1440).
+# the display buffers (3840x2160) and the render size (2560x1440) the game picks for a PS4 Pro.
 # (address, expected bytes, imm32 offset, 'w' or 'h'): mov r32, imm32 in the display init.
-RENDER_SITES = [
+DISPLAY_SITES = [
     (0x00495bfc, bytes.fromhex('41bc000f0000'), 2, 'w'),  # display width 3840
     (0x00495bf1, bytes.fromhex('41bf70080000'), 2, 'h'),  # display height 2160
+    (0x004a2ae4, bytes.fromhex('b8000f0000'), 1, 'w'),  # another display-size object: width 3840
+    (0x004a2b08, bytes.fromhex('b870080000'), 1, 'h'),  # height 2160
+]
+RENDER_SITES = [
     (0x00495d5b, bytes.fromhex('41bd000a0000'), 2, 'w'),  # render width 2560
     (0x00495d76, bytes.fromhex('41bfa0050000'), 2, 'h'),  # render height 1440
 ]
 # The render target pool (RTAllocator) of a PS4 Pro, 0x23d10000 bytes for 2560x1440, grows with
 # the render size (mov eax, imm32).
 RT_POOL_SITE, RT_POOL_ORIGINAL, RT_POOL_PRO = 0x0049b760, bytes.fromhex('b80000d123'), 0x23d10000
+# Texel sizes of the PS4 Pro half and full render size (1/1280, 1/720, 1/2560, 1/1440), copied
+# into a shader constant block (vmovups at 0x9e3dd8); renderWxH sets them for WxH.
+TEXEL_SIZES, TEXEL_SIZES_ORIGINAL = 0x01668b90, struct.pack('<4f', 1 / 1280, 1 / 720, 1 / 2560, 1 / 1440)
 # The UI lays out in the display buffer's pixels, from float tables {base PS4, PS4 Pro} of the
-# width {1920, 3840} and height {1080, 2160}; the PS4 Pro entries become WxH.
+# width {1920, 3840} and height {1080, 2160}; displayWxH changes the PS4 Pro entries.
 UI_SIZE_TABLES = [(0x013c34a0, 'w'), (0x013c34a8, 'h'), (0x013d7518, 'w'), (0x013d7520, 'h'),
                   (0x01667f14, 'w'), (0x01667f1c, 'h'), (0x01667f24, 'w'), (0x01667f2c, 'h'),
                   (0x01667f34, 'w'), (0x01667f3c, 'h'), (0x01667f54, 'w'), (0x01667f5c, 'h'),
                   (0x01667f84, 'w'), (0x01667f8c, 'h')]
 UI_SIZE_ORIGINAL = {'w': struct.pack('<ff', 1920.0, 3840.0), 'h': struct.pack('<ff', 1080.0, 2160.0)}
-RENDER_MODE = re.compile(r'^render(\d+)x(\d+)$')
+SIZE_MODE = re.compile(r'^(display|render)(\d+)x(\d+)$')
 # Modes made of cvars only.
 CVAR_MODES = {
     'af16': ['progSamplerAnisoLevel=16', 'progSamplerAnisoLevel_BasePS4=16', 'progSamplerAnisoLevel_Perf=16',
@@ -103,23 +112,28 @@ def main():
             writes.append((ASPECT_SITE + 3 - BASE, struct.pack('<f', ratio)))
             print(f'Mode {mode}: display aspect {ratio:.4f}')
             continue
-        render = RENDER_MODE.match(mode)
-        if render:
-            size = {'w': int(render.group(1)), 'h': int(render.group(2))}
-            if any(image_bytes(elf, ph, a - BASE, len(o)) != o for a, o, _, _ in RENDER_SITES):
-                print(f'Mode {mode}: render size sites not found, not applied')
+        sized = SIZE_MODE.match(mode)
+        if sized:
+            kind, size = sized.group(1), {'w': int(sized.group(2)), 'h': int(sized.group(3))}
+            sites = DISPLAY_SITES if kind == 'display' else RENDER_SITES
+            if any(image_bytes(elf, ph, a - BASE, len(o)) != o for a, o, _, _ in sites):
+                print(f'Mode {mode}: {kind} size sites not found, not applied')
                 continue
-            writes += [(a + i - BASE, struct.pack('<I', size[k])) for a, _, i, k in RENDER_SITES]
-            for a, k in UI_SIZE_TABLES:
-                if image_bytes(elf, ph, a - BASE, 8) == UI_SIZE_ORIGINAL[k]:
-                    writes.append((a + 4 - BASE, struct.pack('<f', float(size[k]))))
-            if image_bytes(elf, ph, RT_POOL_SITE - BASE, len(RT_POOL_ORIGINAL)) == RT_POOL_ORIGINAL:
+            writes += [(a + i - BASE, struct.pack('<I', size[k])) for a, _, i, k in sites]
+            if kind == 'display':
+                for a, k in UI_SIZE_TABLES:
+                    if image_bytes(elf, ph, a - BASE, 8) == UI_SIZE_ORIGINAL[k]:
+                        writes.append((a + 4 - BASE, struct.pack('<f', float(size[k]))))
+            elif image_bytes(elf, ph, TEXEL_SIZES - BASE, 16) == TEXEL_SIZES_ORIGINAL:
+                w, h = size['w'], size['h']
+                writes.append((TEXEL_SIZES - BASE, struct.pack('<4f', 2 / w, 2 / h, 1 / w, 1 / h)))
+            if kind == 'render' and image_bytes(elf, ph, RT_POOL_SITE - BASE, len(RT_POOL_ORIGINAL)) == RT_POOL_ORIGINAL:
                 # Scaled by the pixel count, with 25% headroom, in 64 KiB units.
                 scale = max(1.0, size['w'] * size['h'] / (2560 * 1440)) * 1.25
                 pool = (int(RT_POOL_PRO * scale) + 0xffff) & ~0xffff
                 writes.append((RT_POOL_SITE + 1 - BASE, struct.pack('<I', pool)))
                 print(f'Mode {mode}: render target pool {pool / 2**20:.0f} MiB')
-            print(f'Mode {mode}: PS4 Pro display and render size {size["w"]}x{size["h"]}')
+            print(f'Mode {mode}: PS4 Pro {kind} size {size["w"]}x{size["h"]}')
             continue
         if mode not in MODES and mode not in CVAR_MODES:
             raise SystemExit(f'unknown mode {mode!r} (known: {", ".join([*MODES, *CVAR_MODES])})')
