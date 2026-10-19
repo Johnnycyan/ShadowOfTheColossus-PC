@@ -156,6 +156,9 @@ int VideoOutDriver::RegisterBuffers(VideoOutPort* port, s32 startIndex, void* co
              startIndex, bufferNum, GetPixelFormatString(attribute->pixel_format),
              attribute->aspect_ratio, static_cast<u32>(attribute->tiling_mode), attribute->width,
              attribute->height, attribute->pitch_in_pixel, attribute->option);
+    // sotc: HDR diagnostics in last_run.log (the log above is filtered out).
+    std::fprintf(stderr, "VideoOut: buffers %dx%d %s\n", attribute->width, attribute->height,
+                 GetPixelFormatString(attribute->pixel_format).data());
 
     auto& group = port->groups[group_index];
     std::memcpy(&group.attrib, attribute, sizeof(BufferAttribute));
@@ -231,6 +234,8 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
              attributeIndex, GetPixelFormatString(attribute->pixel_format), attribute->aspect_ratio,
              static_cast<u32>(attribute->tiling_mode), attribute->width, attribute->height,
              attribute->pitch_in_pixel, attribute->option);
+    std::fprintf(stderr, "VideoOut: buffer attribute changed to %dx%d %s\n", attribute->width,
+                 attribute->height, GetPixelFormatString(attribute->pixel_format).data());
 
     std::unique_lock lock{port->port_mutex};
     std::memcpy(&port->groups[attributeIndex].attrib, attribute, sizeof(BufferAttribute));

@@ -45,6 +45,9 @@
 
 namespace Vulkan {
 
+// sotc: format of the presenter's frame images (see Presenter::Presenter).
+static constexpr vk::Format FrameFormat = vk::Format::eA2B10G10R10UnormPack32;
+
 bool CanBlitToSwapchain(const vk::PhysicalDevice physical_device, vk::Format format) {
     const vk::FormatProperties props{physical_device.getFormatProperties(format)};
     return static_cast<bool>(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst);
@@ -492,7 +495,9 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         static_cast<float>(EmulatorSettings.GetRcasAttenuation() / 1000.f);
 
     fsr_pass.Create(device, instance.GetAllocator(), num_images);
-    pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
+    // sotc: the frame image is 10-bit so a BT.2020 PQ (HDR) game image keeps its precision on the
+    // way to the HDR swapchain; the blit converts it for an 8-bit SDR swapchain.
+    pp_pass.Create(device, FrameFormat);
 
 }
 
@@ -529,7 +534,7 @@ void Presenter::RecreateFrame(Frame* frame, u32 width, u32 height) {
         vmaDestroyImage(instance.GetAllocator(), frame->image, frame->allocation);
     }
 
-    const vk::Format format = swapchain.GetSurfaceFormat().format;
+    const vk::Format format = FrameFormat;
     const vk::ImageCreateInfo image_info = {
         .flags = vk::ImageCreateFlagBits::eMutableFormat,
         .imageType = vk::ImageType::e2D,

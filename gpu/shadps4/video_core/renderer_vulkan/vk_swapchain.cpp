@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdio>
 #include <limits>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -97,6 +98,7 @@ void Swapchain::SetHDR(bool hdr) {
     }
 
     needs_hdr = hdr;
+    std::fprintf(stderr, "Swapchain: switched to %s\n", hdr ? "HDR10 (BT.2020 PQ)" : "SDR");
     Recreate(width, height);
     ImGui::Core::OnSurfaceFormatChange(needs_hdr ? SURFACE_FORMAT_HDR.format
                                                  : surface_format.format);
@@ -163,6 +165,8 @@ void Swapchain::FindPresentFormat() {
             return format == SURFACE_FORMAT_HDR;
         }) != formats.end();
     // Also make sure that user allowed us to use HDR
+    std::fprintf(stderr, "Swapchain: display offers HDR10 (ST.2084): %s, BB_HDR: %s\n",
+                 supports_hdr ? "yes" : "no", EmulatorSettings.IsHdrAllowed() ? "on" : "off");
     supports_hdr &= EmulatorSettings.IsHdrAllowed();
 
     // If there is a single undefined surface format, the device doesn't care, so we'll just use

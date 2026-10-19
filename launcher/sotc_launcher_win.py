@@ -100,7 +100,7 @@ def windows_language():
 # Settings, passed to sotc.py as environment variables.
 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / GAME_ID), 'sys_modules': '',
-                'user_dir': '', 'af16': True, 'fps60': False, 'fullscreen': False,
+                'user_dir': '', 'af16': True, 'fps60': False, 'fullscreen': False, 'hdr': False,
                 'present_mode': 'Mailbox', 'language': '', 'player_name': '', 'show_fps': False,
                 'readbacks': '', 'extra_env': '', 'close_on_play': False, 'gamepad': '',
                 'output_res': '1920x1080', 'upscaler': 'fsr1', 'sharpness': '250', 'mouse': True,
@@ -266,6 +266,8 @@ def game_environment(s):
         env['SOTC_DLC_DIR'] = s['dlc_dir']
     env['SOTC_MODES'] = ','.join(m for m in ('af16', 'fps60') if s.get(m))
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
+    if s.get('hdr'):
+        env['BB_HDR'] = '1'
     env['BB_PRESENT_MODE'] = s['present_mode']
     if s['language']:
         env['BB_LANGUAGE'] = s['language']
@@ -814,6 +816,9 @@ class Launcher:
                        "Motion blur, brightness and filters are in the game's own menu (Options > Presentation)."), top=4)
         self.section(f, _('Tela', 'Display'))
         self.check(f, 'fullscreen', _('Tela cheia', 'Fullscreen'))
+        self.check(f, 'hdr', 'HDR',
+                   _('Saída HDR10 quando o HDR do Windows está ligado; ligue também o HDR no menu do jogo.',
+                     "HDR10 output when Windows HDR is on; also turn HDR on in the game's menu."))
         self.row(f, _('Apresentação', 'Presentation'), self.choice(f, 'present_mode', PRESENT_MODES))
 
     def build_controls(self):
