@@ -35,6 +35,35 @@
 
 namespace Vulkan {
 
+namespace {
+// sotc: SOTC_FULL_BARRIERS (debug, finds missing synchronization): bit 1 a full memory barrier
+// after every compute dispatch, bit 2 after every draw (the render pass ends first).
+u32 FullBarriers() {
+    static const u32 value = [] {
+        const char* v = std::getenv("SOTC_FULL_BARRIERS");
+        return v ? static_cast<u32>(std::atoi(v)) : 0u;
+    }();
+    return value;
+}
+
+void FullBarrier(Scheduler& scheduler, u32 bit) {
+    if (!(FullBarriers() & bit)) {
+        return;
+    }
+    scheduler.EndRendering();
+    const vk::MemoryBarrier2 barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+    };
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    });
+}
+} // namespace
+
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
     // is encountered and implemented in the recompiler.
@@ -246,6 +275,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     instance_offset);
     }
     DebugState.IncDrawCall();
+        FullBarrier(scheduler, 2);
 
     ResetBindings(false);
     FlushPeriodic();
@@ -335,6 +365,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
             cmdbuf.draw(a.vertexCount, a.instanceCount, a.firstVertex, a.firstInstance);
         }
         DebugState.IncDrawCall();
+        FullBarrier(scheduler, 2);
         ResetBindings(false);
         FlushPeriodic();
         return;
@@ -391,6 +422,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
             cmdbuf.drawIndexedIndirect(buffer->Handle(), base, max_count, stride);
         }
         DebugState.IncDrawCall();
+        FullBarrier(scheduler, 2);
     } else {
         ASSERT(sizeof(VkDrawIndirectCommand) == stride);
 
@@ -401,6 +433,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
             cmdbuf.drawIndirect(buffer->Handle(), base, max_count, stride);
         }
         DebugState.IncDrawCall();
+        FullBarrier(scheduler, 2);
     }
 
     // Record the indirect argument reads so a later write to the same range (e.g. a WRITE_DATA
@@ -526,6 +559,7 @@ void Rasterizer::DispatchDirect() {
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
+    FullBarrier(scheduler, 1);
     MaybeDumpImages(cs.pgm_hash);
 
     ResetBindings(true);
@@ -564,6 +598,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
+    FullBarrier(scheduler, 1);
     runtime.AccessBuffer(buffer, base, size, vk::PipelineStageFlagBits2::eDrawIndirect,
                          vk::AccessFlagBits2::eIndirectCommandRead);
     MaybeDumpImages(pipeline->GetStage(Shader::SwStage::Compute).pgm_hash);

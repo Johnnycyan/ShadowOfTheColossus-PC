@@ -73,9 +73,9 @@ public:
     bool IsVkCrashDiagnosticEnabled() { return false; }
     bool IsVkGuestMarkersEnabled() { static const auto value = Flag("BB_VK_MARKERS", false); return value; }
     bool IsVkHostMarkersEnabled() { static const auto value = Flag("BB_VK_MARKERS", false); return value; }
-    bool IsVkValidationCoreEnabled() { return true; }
+    bool IsVkValidationCoreEnabled() { static const auto value = Flag("BB_VK_VALIDATION_CORE", true); return value; }
     bool IsVkValidationEnabled() { static const auto value = Flag("BB_VK_VALIDATION", false); return value; }
-    bool IsVkValidationGpuEnabled() { return false; }
+    bool IsVkValidationGpuEnabled() { static const auto value = Flag("BB_VK_VALIDATION_GPU", false); return value; }
     bool IsVkValidationSyncEnabled() { static const auto value = Flag("BB_VK_VALIDATION_SYNC", false); return value; }
 };
 #define EmulatorSettings (*EmulatorSettingsImpl::GetInstance())
