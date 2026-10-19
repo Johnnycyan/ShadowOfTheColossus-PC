@@ -30,7 +30,17 @@ MODES = {
         # the frame limiter's import stub (sceVideoOutSetFlipRate) returns 0
         (0x01390090, bytes.fromhex('ff25a20567'), bytes.fromhex('31c0c3')),
     ],
+    'nobars': [
+        # the cutscene letterbox command takes a bar height of 0: neither the UI bars
+        # (BPBarsWrapper) nor the original code's two black quads are drawn
+        (0x009e645b, bytes.fromhex('c57a2cf8'), bytes.fromhex('4531ff90')),
+    ],
 }
+# aspectWxH (experimental): the display aspect ratio the game stores at start (16/9, a float in
+# the display object; mov dword [rbx+4], 0x3fe38e39) becomes W/H.
+ASPECT_SITE = 0x00495b3e
+ASPECT_ORIGINAL = bytes.fromhex('c74304398ee33f')
+ASPECT_MODE = re.compile(r'^aspect(\d+)x(\d+)$')
 # Modes made of cvars only.
 CVAR_MODES = {
     'af16': ['progSamplerAnisoLevel=16', 'progSamplerAnisoLevel_BasePS4=16', 'progSamplerAnisoLevel_Perf=16',
@@ -64,6 +74,15 @@ def main():
     supported = is_supported(elf, ph)
     writes, cvars = [], []
     for mode in filter(None, (m.strip().lower() for m in args.modes.split(','))):
+        aspect = ASPECT_MODE.match(mode)
+        if aspect:
+            if image_bytes(elf, ph, ASPECT_SITE - BASE, len(ASPECT_ORIGINAL)) != ASPECT_ORIGINAL:
+                print(f'Mode {mode}: aspect site not found, not applied')
+                continue
+            ratio = int(aspect.group(1)) / int(aspect.group(2))
+            writes.append((ASPECT_SITE + 3 - BASE, struct.pack('<f', ratio)))
+            print(f'Mode {mode}: display aspect {ratio:.4f}')
+            continue
         if mode not in MODES and mode not in CVAR_MODES:
             raise SystemExit(f'unknown mode {mode!r} (known: {", ".join([*MODES, *CVAR_MODES])})')
         if not supported:

@@ -984,7 +984,15 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
                                    vk::PipelineStageFlagBits::eTransfer,
                                    vk::DependencyFlagBits::eByRegion, {}, {}, to_transfer);
-            const auto rect = FitImage(frame->width, frame->height, extent.width, extent.height);
+            // sotc: SOTC_STRETCH=1 fills the swapchain whatever the game's aspect ratio (with the
+            // aspectWxH mode the game renders a wider view into its 16:9 image).
+            static const bool stretch = [] {
+                const char* v = std::getenv("SOTC_STRETCH");
+                return v && *v == '1';
+            }();
+            const auto rect = stretch ? vk::Rect2D{{0, 0}, extent}
+                                      : FitImage(frame->width, frame->height, extent.width,
+                                                 extent.height);
             // sotc: bars around a game image of another aspect ratio show it blurred (as
             // ultrawide-overlay does) unless SOTC_BAR_BLUR=0.
             const bool has_bars = rect.extent.width < extent.width || rect.extent.height < extent.height;
