@@ -758,8 +758,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                     vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead);
     runtime.FlushBarriers();
 
+    // sotc: the HDR game image is PQ encoded (perceptual, like sRGB) and the HDR10 swapchain
+    // takes PQ: FSR filters it as is. Its HDR mode squares the result (gamma 2 to linear),
+    // which darkened the picture whenever FSR upscaled.
     image_view = fsr_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
-                                 fsr_settings, frame->is_hdr);
+                                 fsr_settings, false);
 
     // Vulkan has no sRGB variant of the 10-bit format, so an A2R10G10B10Srgb buffer reaches
     // the post process pass still sRGB encoded and has to be decoded there instead.
