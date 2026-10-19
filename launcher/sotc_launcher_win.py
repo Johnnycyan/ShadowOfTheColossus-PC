@@ -100,7 +100,8 @@ def windows_language():
 # Settings, passed to sotc.py as environment variables.
 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / GAME_ID), 'sys_modules': '',
-                'user_dir': '', 'af16': True, 'fps60': False, 'fullscreen': False, 'hdr': False,
+                'user_dir': '', 'af16': True, 'fps60': False, 'nobars': False, 'ultrawide': False,
+                'fullscreen': False, 'hdr': False,
                 'present_mode': 'Mailbox', 'language': '', 'player_name': '', 'show_fps': False,
                 'readbacks': '', 'extra_env': '', 'close_on_play': False, 'gamepad': '',
                 'output_res': '1920x1080', 'upscaler': 'fsr1', 'sharpness': '250', 'mouse': True,
@@ -171,7 +172,9 @@ EFFECTS = [('fx_vignette', ('Vinheta (cantos escurecidos)', 'Vignette (darkened 
            ('fx_fog', ('Névoa atmosférica', 'Atmospheric fog'), 'fog_enable=0'),
            ('fx_ssao', ('Oclusão ambiente (SSAO)', 'Ambient occlusion (SSAO)'), 'AO_Mode=0')]
 OUTPUTS = [('1280x720', ('1280 × 720 (720p)', '1280 × 720 (720p)')), ('1920x1080', ('1920 × 1080 (1080p)', '1920 × 1080 (1080p)')),
-           ('2560x1440', ('2560 × 1440 (1440p)', '2560 × 1440 (1440p)')), ('3840x2160', ('3840 × 2160 (4K)', '3840 × 2160 (4K)'))]
+           ('2560x1440', ('2560 × 1440 (1440p)', '2560 × 1440 (1440p)')), ('3840x2160', ('3840 × 2160 (4K)', '3840 × 2160 (4K)')),
+           ('2560x1080', ('2560 × 1080 (21:9)', '2560 × 1080 (21:9)')), ('3440x1440', ('3440 × 1440 (21:9)', '3440 × 1440 (21:9)')),
+           ('3840x1600', ('3840 × 1600 (21:9)', '3840 × 1600 (21:9)')), ('5120x1440', ('5120 × 1440 (32:9)', '5120 × 1440 (32:9)'))]
 UPSCALERS = [('fsr1', ('FSR 1 (AMD, qualquer placa)', 'FSR 1 (AMD, any GPU)')),
              ('bilinear', ('Bilinear (simples)', 'Bilinear (plain)'))]
 SHARPNESS = [('0', ('Alta', 'High')), ('250', ('Média (padrão)', 'Medium (default)')), ('600', ('Baixa', 'Low')),
@@ -256,6 +259,21 @@ def short_path(path):
         return str(path)
 
 
+def ultrawide_render(output_res):
+    """(width, height) the game renders at for an output wider than 16:9, else None: about the
+    pixels of the PS4 Pro's 2560x1440, the width a multiple of 512 (other widths streak, see
+    scripts/sotc_modes.py) and the height a multiple of 16 for the output's aspect ratio."""
+    try:
+        width, height = (int(v) for v in str(output_res).split('x'))
+    except ValueError:
+        return None
+    aspect = width / height
+    if aspect <= 16 / 9 + 0.01:
+        return None
+    render_width = max(512, round((2560 * 1440 * aspect) ** 0.5 / 512) * 512)
+    return render_width, max(16, round(render_width / aspect / 16) * 16)
+
+
 def game_environment(s):
     env = dict(os.environ)
     env['SOTC_GAME_DIR'] = s['game_dir']
@@ -264,7 +282,17 @@ def game_environment(s):
         env['SOTC_SYS_MODULES'] = s['sys_modules']
     if s.get('dlc_dir'):
         env['SOTC_DLC_DIR'] = s['dlc_dir']
-    env['SOTC_MODES'] = ','.join(m for m in ('af16', 'fps60') if s.get(m))
+    modes = [m for m in ('af16', 'fps60', 'nobars') if s.get(m)]
+    output = s.get('output_res') or '1920x1080'
+    render = ultrawide_render(output) if s.get('ultrawide') else None
+    if render:
+        # Wider view (hor+) in PS4 Pro mode: the game renders the output's aspect ratio and the
+        # image is stretched to the output; the larger render target pool needs more memory.
+        size = '%dx%d' % render
+        modes += ['aspect' + output, 'display' + size, 'render' + size]
+        env['SOTC_STRETCH'] = '1'
+        env['BB_DMEM_MB'] = '7168'
+    env['SOTC_MODES'] = ','.join(modes)
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
     if s.get('hdr'):
         env['BB_HDR'] = '1'
@@ -292,8 +320,8 @@ def game_environment(s):
         env['SOTC_FLUSH_US'], env['SOTC_RB_AHEAD'] = '500', '1'
     elif s.get('gpu_submit') == 'off':
         env['SOTC_FLUSH_EVERY'], env['SOTC_RB_AHEAD'] = '0', '0'
-    env['SOTC_NEO'] = '1' if s.get('neo') else '0'
-    env['SOTC_OUTPUT_RES'] = s.get('output_res') or '1920x1080'
+    env['SOTC_NEO'] = '1' if s.get('neo') or render else '0'
+    env['SOTC_OUTPUT_RES'] = output
     env['BB_FSR1'] = '1' if s.get('upscaler', 'fsr1') == 'fsr1' else '0'
     if s.get('sharpness') == 'off':
         env['BB_RCAS'] = '0'
@@ -766,6 +794,9 @@ class Launcher:
         self.check(f, 'fps60', _('60 FPS (experimental)', '60 FPS (experimental)'),
                    _('Tira o limite de 30 FPS do jogo; o vblank vai a 120 Hz. Mediu 38 FPS no campo e ~25 no templo.',
                      'Removes the game\'s 30 FPS cap; vblank at 120 Hz. Measured 38 FPS in the open world, ~25 at the temple.'))
+        self.check(f, 'nobars', _('Cenas sem faixas pretas', 'Cutscenes without black bars'),
+                   _('As cenas usam a tela toda em vez das faixas de cinema em cima e embaixo.',
+                     'Cutscenes use the whole screen instead of the cinema bars at the top and bottom.'))
         self.section(f, _('Resolução', 'Resolution'))
         self.row(f, _('Saída', 'Output'), self.choice(f, 'output_res', OUTPUTS),
                  _('O jogo renderiza em 1080p, como no PS4; a imagem é ampliada ou reduzida para a saída. '
@@ -775,6 +806,13 @@ class Launcher:
         self.row(f, _('Upscaler', 'Upscaler'), self.choice(f, 'upscaler', UPSCALERS),
                  _('FSR 1 amplia com bordas nítidas (acima de 1080p).', 'FSR 1 upscales with sharp edges (above 1080p).'))
         self.row(f, _('Nitidez (RCAS)', 'Sharpening (RCAS)'), self.choice(f, 'sharpness', SHARPNESS))
+        self.check(f, 'ultrawide', _('Ultrawide: visão mais larga', 'Ultrawide: wider view'),
+                   _('Com uma saída mais larga que 16:9 (21:9, 32:9), o jogo mostra mais dos lados em vez de faixas. '
+                     'Liga o modo PS4 Pro e renderiza na proporção da saída (3072 × 1280 para 3440 × 1440). '
+                     'Desligado: o jogo fica em 16:9 com as laterais desfocadas.',
+                     'With an output wider than 16:9 (21:9, 32:9) the game shows more at the sides instead of bars. '
+                     'Turns on PS4 Pro mode and renders at the output aspect ratio (3072 × 1280 for 3440 × 1440). '
+                     'Off: the game stays 16:9 with blurred sides.'))
         self.section(f, _('Modo PS4 Pro', 'PS4 Pro mode'))
         self.check(f, 'neo', _('Apresentar-se como PS4 Pro', 'Present as a PS4 Pro'),
                    _('O jogo passa a oferecer, no menu Opções > Apresentação, o Modo Grafismo do PS4 Pro: '
@@ -996,7 +1034,9 @@ class Launcher:
                  'FSR 1' if self.var('upscaler').get() == 'fsr1' else 'bilinear']
         if self.var('af16').get():
             parts.append(_('AF 16x', '16x AF'))
-        if self.var('neo').get():
+        if self.var('ultrawide').get() and ultrawide_render(self.var('output_res').get()):
+            parts.append(_('ultrawide', 'ultrawide'))
+        elif self.var('neo').get():
             parts.append('PS4 Pro')
         parts.append(_('tela cheia', 'fullscreen') if self.var('fullscreen').get() else _('janela', 'window'))
         return '   ·   '.join(parts)
