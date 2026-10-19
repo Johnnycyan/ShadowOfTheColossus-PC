@@ -556,8 +556,10 @@ void Rasterizer::DispatchDirect() {
     pipeline->BindResources(set_writes, push_data);
 
     const auto cmdbuf = scheduler.CommandBuffer();
-    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
-    cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    if (!DispatchDlssTaa(cs)) {
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+        cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    }
     DebugState.IncDispatch();
     FullBarrier(scheduler, 1);
     MaybeDumpImages(cs.pgm_hash);

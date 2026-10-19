@@ -14,6 +14,9 @@ typedef struct {
     uint32_t psf_attributes;    /* param.sfo ATTRIBUTE */
     int32_t width, height;      /* initial window size */
 } BbGpuConfig;
+/* sotc: host address of the guest image (eboot at offset 0), set by the loader. The GPU library
+ * reads values the eboot patches store there (the camera jitter for DLSS). */
+extern uintptr_t bbgpu_guest_image_base;
 /* Registers kernel event queues (needed with or without graphics). */
 void bbgpu_register_kernel(void);
 /* Creates window, Vulkan device, presenter and GPU command processor. */

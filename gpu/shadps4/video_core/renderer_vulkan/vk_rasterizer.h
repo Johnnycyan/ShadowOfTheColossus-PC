@@ -136,6 +136,8 @@ private:
                      Shader::PushData& push_data);
     void BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding);
     bool BindResources(const Pipeline* pipeline);
+    /// sotc: DLSS in place of the game's TAA dispatch (vk_rasterizer_dlss.cpp).
+    bool DispatchDlssTaa(const Shader::Info& cs);
 
     void BindVertexBuffers(const GraphicsPipeline* pipeline);
     void BindIndexBuffer(u32 index_offset = 0);

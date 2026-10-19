@@ -39,6 +39,17 @@ Scheduler::~Scheduler() {
 #endif
 }
 
+void Scheduler::RecordNative(std::function<void(vk::CommandBuffer)> func) {
+    const vk::CommandBuffer cmdbuf = CommandBuffer();
+    if (!recorder || !CommandRecorder::IsFake(cmdbuf)) {
+        func(cmdbuf);
+        return;
+    }
+    recorder->Run([this, fake = static_cast<VkCommandBuffer>(cmdbuf), func = std::move(func)] {
+        func(vk::CommandBuffer{recorder->Real(fake)});
+    });
+}
+
 void Scheduler::ClaimRecorder() {
     if (recorder) {
         recorder->ClaimProducer();

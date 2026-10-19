@@ -272,6 +272,8 @@ static void StartProfileWriter() {
 }
 #endif
 
+extern "C" uintptr_t bbgpu_guest_image_base = 0;
+
 extern "C" int bbgpu_init(const BbGpuConfig* config) {
     BbSettings::Load();
 #ifdef BB_PGO_GENERATE

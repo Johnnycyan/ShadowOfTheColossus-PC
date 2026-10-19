@@ -100,7 +100,7 @@ def windows_language():
 # Settings, passed to sotc.py as environment variables.
 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / GAME_ID), 'sys_modules': '',
-                'user_dir': '', 'af16': True, 'fps60': False, 'nobars': False, 'ultrawide': False,
+                'user_dir': '', 'af16': True, 'fps60': False, 'nobars': False, 'ultrawide': False, 'dlss': False,
                 'fullscreen': False, 'hdr': False,
                 'present_mode': 'Mailbox', 'language': '', 'player_name': '', 'show_fps': False,
                 'readbacks': '', 'extra_env': '', 'close_on_play': False, 'gamepad': '',
@@ -292,6 +292,10 @@ def game_environment(s):
         modes += ['aspect' + output, 'display' + size, 'render' + size]
         env['SOTC_STRETCH'] = '1'
         env['BB_DMEM_MB'] = '7168'
+    if s.get('dlss'):
+        # DLSS (DLAA) in place of the game's TAA; the eboot mode hands it the camera jitter.
+        modes.append('dlss')
+        env['SOTC_DLSS'] = '1'
     env['SOTC_MODES'] = ','.join(modes)
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
     if s.get('hdr'):
@@ -806,6 +810,11 @@ class Launcher:
         self.row(f, _('Upscaler', 'Upscaler'), self.choice(f, 'upscaler', UPSCALERS),
                  _('FSR 1 amplia com bordas nítidas (acima de 1080p).', 'FSR 1 upscales with sharp edges (above 1080p).'))
         self.row(f, _('Nitidez (RCAS)', 'Sharpening (RCAS)'), self.choice(f, 'sharpness', SHARPNESS))
+        self.check(f, 'dlss', _('DLSS (DLAA, NVIDIA RTX)', 'DLSS (DLAA, NVIDIA RTX)'),
+                   _('Troca o antisserrilhamento temporal do jogo pelo DLSS na resolução de renderização. '
+                     'Precisa de bbport_dlss.dll e nvngx_dlss.dll na pasta bin.',
+                     "Replaces the game's temporal anti-aliasing with DLSS at the render resolution. "
+                     'Needs bbport_dlss.dll and nvngx_dlss.dll in the bin folder.'))
         self.check(f, 'ultrawide', _('Ultrawide: visão mais larga', 'Ultrawide: wider view'),
                    _('Com uma saída mais larga que 16:9 (21:9, 32:9), o jogo mostra mais dos lados em vez de faixas. '
                      'Liga o modo PS4 Pro e renderiza na proporção da saída (3072 × 1280 para 3440 × 1440). '

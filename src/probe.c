@@ -1027,6 +1027,7 @@ int main(int argc, char **argv) {
     /* sotc: the CPU patch trampolines follow the image (rel32 jumps reach them). */
 #ifdef _WIN32
     image = allocate_image(round_page(size) + SOTC_TRAMPOLINE_SIZE);
+    bbgpu_guest_image_base = (uintptr_t)image;
 #else
     image = allocate(round_page(size) + SOTC_TRAMPOLINE_SIZE);
 #endif
@@ -1119,6 +1120,11 @@ int main(int argc, char **argv) {
             executable_entry = 1;
     }
     if (!executable_entry) fail("entry is not executable");
+    /* sotc: the padding page at image offset 0x395f000, between the eboot and its first module,
+     * stays writable: the dlss eboot mode (scripts/sotc_modes.py) stores the camera jitter there
+     * for the GPU library. */
+    if (UINT64_C(0x3960000) <= size && !mapped(segments, ns, UINT64_C(0x395f000), 1))
+        protect(image + UINT64_C(0x395f000), 4096, 6);
     protect(image + round_page(size), SOTC_TRAMPOLINE_SIZE, 5);
     printf("Mapped %" PRIu64 " bytes, %" PRIu64 " segments; applied %" PRIu64 " relocations\n", size, ns, nr);
     if (native_libc) {

@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define BBPORT_DLSS_BRIDGE_ABI 1
+#define BBPORT_DLSS_BRIDGE_ABI 2
 
 typedef void (*BbDlssLogFn)(int warning, const char* message);
 
@@ -48,6 +48,8 @@ typedef struct BbDlssEvaluate {
     int32_t reset;
     float frame_ms;
     float sharpness; // 0..1; 0 leaves the output unsharpened
+    float mv_scale_x; // motion vectors times these are render pixels (ABI 2; 0 means 1)
+    float mv_scale_y;
 } BbDlssEvaluate;
 
 typedef struct BbDlssApi {

@@ -70,6 +70,27 @@ UI_SIZE_TABLES = [(0x013c34a0, 'w'), (0x013c34a8, 'h'), (0x013d7518, 'w'), (0x01
                   (0x01667f84, 'w'), (0x01667f8c, 'h')]
 UI_SIZE_ORIGINAL = {'w': struct.pack('<ff', 1920.0, 3840.0), 'h': struct.pack('<ff', 1080.0, 2160.0)}
 SIZE_MODE = re.compile(r'^(display|render)(\d+)x(\d+)$')
+# dlss: the camera jitter of the main view (vmovlps [rbx+0x80], xmm0 at 0x4bbbb1, after the
+# jitter function at 0x4bb950: (2 * Halton(2,3) - 1) * (s / width, s / height)) is also stored
+# at image offset DLSS_JITTER, in the padding between the eboot and the first module, where the
+# GPU library reads it for DLSS. Two 14-byte padding caves after no-return calls hold the code.
+DLSS_JITTER = 0x395f000
+DLSS_HOOK, DLSS_CAVE_A, DLSS_CAVE_B = 0x4bbbb1, 0x4bb942, 0x4bc242
+JMP, NOP = bytes([0xe9]), bytes([0x90])
+
+
+def rel32(source_end, target):
+    return struct.pack('<i', target - source_end)
+
+
+DLSS_STORE = bytes.fromhex('c5f8138380000000')  # vmovlps [rbx+0x80], xmm0
+MODES['dlss'] = [
+    (DLSS_HOOK, DLSS_STORE, JMP + rel32(DLSS_HOOK + 5, DLSS_CAVE_A) + NOP * 3),
+    (DLSS_CAVE_A, NOP * 13, DLSS_STORE + JMP + rel32(DLSS_CAVE_A + 13, DLSS_CAVE_B)),
+    (DLSS_CAVE_B, NOP * 13,
+     bytes.fromhex('c5f81305') + rel32(DLSS_CAVE_B + 8, BASE + DLSS_JITTER)  # vmovlps [rip+d], xmm0
+     + JMP + rel32(DLSS_CAVE_B + 13, DLSS_HOOK + 8)),
+]
 # Modes made of cvars only.
 CVAR_MODES = {
     'af16': ['progSamplerAnisoLevel=16', 'progSamplerAnisoLevel_BasePS4=16', 'progSamplerAnisoLevel_Perf=16',

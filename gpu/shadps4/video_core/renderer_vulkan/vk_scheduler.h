@@ -5,6 +5,7 @@
 
 
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <queue>
@@ -474,6 +475,11 @@ public:
     }
 
     static std::mutex submit_mutex;
+
+    /// sotc: runs func with the real command buffer behind CommandBuffer() at this point of the
+    /// command stream: right away, or on the recording thread with record_thread (code that
+    /// records through the driver itself, such as NGX for DLSS, must not get a fake handle).
+    void RecordNative(std::function<void(vk::CommandBuffer)> func);
 
 private:
     void EndSession();
