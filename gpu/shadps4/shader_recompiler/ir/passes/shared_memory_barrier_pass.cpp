@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <cstdlib>
 #include <queue>
 #include <unordered_set>
@@ -82,6 +83,8 @@ struct DivergenceContext {
     std::unordered_set<const IR::Block*> uniform_readlane_blocks;
     // Synchronize host subgroups only (workgroups larger than one wave).
     bool subgroup{};
+    // A LocalInvocationId component is uniform when its workgroup dimension is 1.
+    std::array<u32, 3> workgroup_size{1, 1, 1};
 };
 
 // A condition is divergent when it depends on LocalInvocationId. With uniform_readlane_blocks,
@@ -89,7 +92,8 @@ struct DivergenceContext {
 // depth, for example) is the same in every invocation even though its inputs are not.
 // From Pink-shadPS4 (luizgustavs), lds_barrier_uniform_readlane.
 static bool SearchDivergence(const IR::U1& cond,
-                             const std::unordered_set<const IR::Block*>* uniform_readlane_blocks) {
+                             const std::unordered_set<const IR::Block*>* uniform_readlane_blocks,
+                             const std::array<u32, 3>& workgroup_size) {
     if (cond.IsImmediate()) {
         return false;
     }
@@ -101,7 +105,12 @@ static bool SearchDivergence(const IR::U1& cond,
         queue.pop();
         if (inst->GetOpcode() == IR::Opcode::GetAttributeU32 &&
             inst->Arg(0).Attribute() == IR::Attribute::LocalInvocationId) {
-            return true;
+            // Upstream shadPS4 #5429: singleton dimensions are not divergent.
+            const u32 component = inst->Arg(1).U32();
+            if (component >= 3 || workgroup_size[component] > 1) {
+                return true;
+            }
+            continue;
         }
         if (uniform_readlane_blocks && inst->GetOpcode() == IR::Opcode::ReadLane &&
             inst->Arg(1).IsImmediate() && uniform_readlane_blocks->contains(inst->GetParent())) {
@@ -122,9 +131,10 @@ static bool SearchDivergence(const IR::U1& cond,
 }
 
 static bool IsDivergent(const IR::U1& cond, const DivergenceContext& ctx) {
-    return SearchDivergence(cond, ctx.uniform_readlane_blocks.empty()
-                                      ? nullptr
-                                      : &ctx.uniform_readlane_blocks);
+    return SearchDivergence(cond,
+                            ctx.uniform_readlane_blocks.empty() ? nullptr
+                                                                : &ctx.uniform_readlane_blocks,
+                            ctx.workgroup_size);
 }
 
 // Inserts a barrier after divergent conditional blocks to avoid undefined
@@ -223,6 +233,8 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     using Type = IR::AbstractSyntaxNode::Type;
     DivergenceContext ctx;
     ctx.subgroup = multi_wave;
+    ctx.workgroup_size = {cs_info.workgroup_size[0], cs_info.workgroup_size[1],
+                          cs_info.workgroup_size[2]};
     // A ReadLane is uniform within one wave, not across the waves of a larger workgroup.
     if (!multi_wave && Wave64UniformBranchesEnabled()) {
         const auto blocks = FindWave64UniformBlocks(program);
