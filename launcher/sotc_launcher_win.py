@@ -177,7 +177,7 @@ OUTPUTS = [('1280x720', ('1280 × 720 (720p)', '1280 × 720 (720p)')), ('1920x10
            ('3840x1600', ('3840 × 1600 (21:9)', '3840 × 1600 (21:9)')), ('5120x1440', ('5120 × 1440 (32:9)', '5120 × 1440 (32:9)'))]
 UPSCALERS = [('fsr1', ('FSR 1 (AMD, qualquer placa)', 'FSR 1 (AMD, any GPU)')),
              ('bilinear', ('Bilinear (simples)', 'Bilinear (plain)'))]
-DLSS_MODES = [('', ('Desligado', 'Off')), ('dlaa', ('DLAA (nativo)', 'DLAA (native)')),
+DLSS_MODES = [('', ('Desligado', 'Off')), ('dlaa', ('DLAA (nativo, até 3072 de largura)', 'DLAA (native, up to 3072 wide)')),
               ('quality', ('Qualidade (1,5x)', 'Quality (1.5x)')), ('balanced', ('Equilibrado (1,7x)', 'Balanced (1.7x)')),
               ('performance', ('Desempenho (2x)', 'Performance (2x)')),
               ('ultra', ('Ultra Desempenho (3x)', 'Ultra Performance (3x)'))]
@@ -275,7 +275,7 @@ def ultrawide_render(output_res):
     aspect = width / height
     if aspect <= 16 / 9 + 0.01:
         return None
-    render_width = max(512, round((2560 * 1440 * aspect) ** 0.5 / 512) * 512)
+    render_width = min(3072, max(512, round((2560 * 1440 * aspect) ** 0.5 / 512) * 512))  # wider streaks
     return render_width, max(32, round(render_width / aspect / 32) * 32)
 
 
@@ -284,8 +284,8 @@ def dlss_sizes(output_res, mode):
     the smallest one at least as wide as the output, and the presenter scales that down to the
     output. Widths are multiples of 512 and heights multiples of 32, near the output's aspect
     ratio: other sizes garble or streak the game's render targets (2560x1072 -> 3840x1608 did,
-    see scripts/sotc_modes.py). 3440x1440 Quality: 2560x1056 -> 3584x1504. None for an unknown
-    mode."""
+    see scripts/sotc_modes.py), and render widths stay at or below 3072. 3440x1440 Quality:
+    2560x1088 -> 3584x1504; DLAA there is 3072x1280 -> 3584x1504. None for an unknown mode."""
     scale = DLSS_SCALES.get(mode)
     try:
         width, height = (int(v) for v in str(output_res).split('x'))
@@ -295,7 +295,8 @@ def dlss_sizes(output_res, mode):
         return None
     aspect = width / height
     display_width = -(-width // 512) * 512
-    render_width = max(512, round(display_width / scale / 512) * 512)
+    # Render widths above 3072 bring back the blue streaks on characters (3456 and 3584 did).
+    render_width = min(3072, max(512, round(display_width / scale / 512) * 512))
     display_height = max(32, round(display_width / aspect / 32) * 32)
     render_height = max(32, round(display_height * render_width / display_width / 32) * 32)
     return (render_width, render_height), (display_width, display_height)
