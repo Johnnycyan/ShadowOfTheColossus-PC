@@ -255,6 +255,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     if (needs_barrier) {
         runtime.FlushBarriers();
     }
+    DlssComposite(pipeline);
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
@@ -632,6 +633,7 @@ void Rasterizer::OnFence() {
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
+    fragment_image_bindings.clear();
     if (IsComputeImageCopy(pipeline) || IsComputeMetaClear(pipeline) ||
         IsComputeImageClear(pipeline)) {
         static const bool drop_trace = std::getenv("SOTC_DROP_TRACE") != nullptr;
@@ -1522,6 +1524,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         set_write.descriptorCount = 1;
         set_write.descriptorType = vk::DescriptorType::eSampler;
         set_write.pImageInfo = &image_infos.back();
+    }
+    // sotc: the fragment stage binds first; DlssComposite needs its images after the others.
+    if (stage.sw_stage == Shader::SwStage::Fragment) {
+        fragment_image_bindings = image_bindings;
     }
 }
 

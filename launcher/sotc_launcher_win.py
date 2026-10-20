@@ -100,7 +100,7 @@ def windows_language():
 # Settings, passed to sotc.py as environment variables.
 
 APP_DEFAULTS = {'ui_language': '', 'game_dir': str(PORT_DIR.parent / GAME_ID), 'sys_modules': '',
-                'user_dir': '', 'af16': True, 'fps60': False, 'nobars': False, 'ultrawide': False, 'dlss': False,
+                'user_dir': '', 'af16': True, 'fps60': False, 'nobars': False, 'ultrawide': False, 'dlss': '',
                 'fullscreen': False, 'hdr': False,
                 'present_mode': 'Mailbox', 'language': '', 'player_name': '', 'show_fps': False,
                 'readbacks': '', 'extra_env': '', 'close_on_play': False, 'gamepad': '',
@@ -177,6 +177,11 @@ OUTPUTS = [('1280x720', ('1280 × 720 (720p)', '1280 × 720 (720p)')), ('1920x10
            ('3840x1600', ('3840 × 1600 (21:9)', '3840 × 1600 (21:9)')), ('5120x1440', ('5120 × 1440 (32:9)', '5120 × 1440 (32:9)'))]
 UPSCALERS = [('fsr1', ('FSR 1 (AMD, qualquer placa)', 'FSR 1 (AMD, any GPU)')),
              ('bilinear', ('Bilinear (simples)', 'Bilinear (plain)'))]
+DLSS_MODES = [('', ('Desligado', 'Off')), ('dlaa', ('DLAA (nativo)', 'DLAA (native)')),
+              ('quality', ('Qualidade (1,5x)', 'Quality (1.5x)')), ('balanced', ('Equilibrado (1,7x)', 'Balanced (1.7x)')),
+              ('performance', ('Desempenho (2x)', 'Performance (2x)')),
+              ('ultra', ('Ultra Desempenho (3x)', 'Ultra Performance (3x)'))]
+DLSS_SCALES = {'dlaa': 1.0, 'quality': 1.5, 'balanced': 1.72, 'performance': 2.0, 'ultra': 3.0}
 SHARPNESS = [('0', ('Alta', 'High')), ('250', ('Média (padrão)', 'Medium (default)')), ('600', ('Baixa', 'Low')),
              ('off', ('Desligada', 'Off'))]
 MOUSE_SENS = [('0.5', ('0,5 (lenta)', '0.5 (slow)')), ('0.75', ('0,75', '0.75')), ('1.0', ('1,0 (padrão)', '1.0 (default)')),
@@ -271,7 +276,29 @@ def ultrawide_render(output_res):
     if aspect <= 16 / 9 + 0.01:
         return None
     render_width = max(512, round((2560 * 1440 * aspect) ** 0.5 / 512) * 512)
-    return render_width, max(16, round(render_width / aspect / 16) * 16)
+    return render_width, max(32, round(render_width / aspect / 32) * 32)
+
+
+def dlss_sizes(output_res, mode):
+    """(render, display) sizes for a DLSS mode: DLSS upscales the render size to the display size,
+    the smallest one at least as wide as the output, and the presenter scales that down to the
+    output. Widths are multiples of 512 and heights multiples of 32, near the output's aspect
+    ratio: other sizes garble or streak the game's render targets (2560x1072 -> 3840x1608 did,
+    see scripts/sotc_modes.py). 3440x1440 Quality: 2560x1056 -> 3584x1504. None for an unknown
+    mode."""
+    scale = DLSS_SCALES.get(mode)
+    try:
+        width, height = (int(v) for v in str(output_res).split('x'))
+    except ValueError:
+        return None
+    if not scale:
+        return None
+    aspect = width / height
+    display_width = -(-width // 512) * 512
+    render_width = max(512, round(display_width / scale / 512) * 512)
+    display_height = max(32, round(display_width / aspect / 32) * 32)
+    render_height = max(32, round(display_height * render_width / display_width / 32) * 32)
+    return (render_width, render_height), (display_width, display_height)
 
 
 def game_environment(s):
@@ -292,10 +319,20 @@ def game_environment(s):
         modes += ['aspect' + output, 'display' + size, 'render' + size]
         env['SOTC_STRETCH'] = '1'
         env['BB_DMEM_MB'] = '7168'
-    if s.get('dlss'):
-        # DLSS (DLAA) in place of the game's TAA; the eboot mode hands it the camera jitter.
-        modes.append('dlss')
-        env['SOTC_DLSS'] = '1'
+    dlss_mode = s.get('dlss')
+    if dlss_mode is True:  # older settings: the DLAA check box
+        dlss_mode = 'dlaa'
+    sizes = dlss_sizes(output, dlss_mode)
+    if sizes:
+        # DLSS in PS4 Pro mode: DLAA in place of the game's TAA, or upscaling from the render to
+        # the display size at the game's composite; the eboot mode hands it the camera jitter.
+        (render_w, render_h), (display_w, display_h) = sizes
+        modes = [m for m in modes if not m.startswith(('display', 'render'))]
+        modes += ['display%dx%d' % (display_w, display_h), 'render%dx%d' % (render_w, render_h), 'dlss']
+        env['SOTC_DLSS'] = '1' if render_w == display_w else '2'
+        env['SOTC_STRETCH'] = '1'
+        env['BB_DMEM_MB'] = '7168'
+        render = render or sizes[0]
     env['SOTC_MODES'] = ','.join(modes)
     env['BB_FULLSCREEN'] = '1' if s['fullscreen'] else '0'
     if s.get('hdr'):
@@ -810,11 +847,13 @@ class Launcher:
         self.row(f, _('Upscaler', 'Upscaler'), self.choice(f, 'upscaler', UPSCALERS),
                  _('FSR 1 amplia com bordas nítidas (acima de 1080p).', 'FSR 1 upscales with sharp edges (above 1080p).'))
         self.row(f, _('Nitidez (RCAS)', 'Sharpening (RCAS)'), self.choice(f, 'sharpness', SHARPNESS))
-        self.check(f, 'dlss', _('DLSS (DLAA, NVIDIA RTX)', 'DLSS (DLAA, NVIDIA RTX)'),
-                   _('Troca o antisserrilhamento temporal do jogo pelo DLSS na resolução de renderização. '
-                     'Precisa de bbport_dlss.dll e nvngx_dlss.dll na pasta bin.',
-                     "Replaces the game's temporal anti-aliasing with DLSS at the render resolution. "
-                     'Needs bbport_dlss.dll and nvngx_dlss.dll in the bin folder.'))
+        self.row(f, _('DLSS (NVIDIA RTX)', 'DLSS (NVIDIA RTX)'), self.choice(f, 'dlss', DLSS_MODES),
+                 _('Troca o antisserrilhamento do jogo pelo DLSS (modo PS4 Pro). DLAA: sem ampliação. '
+                   'Os outros ampliam até um pouco acima da saída, que depois é reduzida (3440 × 1440 '
+                   'Qualidade: 2560 × 1072 → 3840 × 1608). Precisa de bbport_dlss.dll e nvngx_dlss.dll na pasta bin.',
+                   "Replaces the game's anti-aliasing with DLSS (PS4 Pro mode). DLAA: no upscaling. "
+                   'The others upscale to just above the output, then scale down (3440 × 1440 Quality: '
+                   '2560 × 1072 → 3840 × 1608). Needs bbport_dlss.dll and nvngx_dlss.dll in the bin folder.'))
         self.check(f, 'ultrawide', _('Ultrawide: visão mais larga', 'Ultrawide: wider view'),
                    _('Com uma saída mais larga que 16:9 (21:9, 32:9), o jogo mostra mais dos lados em vez de faixas. '
                      'Liga o modo PS4 Pro e renderiza na proporção da saída (3072 × 1280 para 3440 × 1440). '

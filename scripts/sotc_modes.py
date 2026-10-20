@@ -42,8 +42,9 @@ ASPECT_SITE = 0x00495b3e
 ASPECT_ORIGINAL = bytes.fromhex('c74304398ee33f')
 ASPECT_MODE = re.compile(r'^aspect(\d+)x(\d+)$')
 # displayWxH and renderWxH (experimental, PS4 Pro mode only; use both for 21:9, e.g. 3072x1280
-# upscaled to 3440x1440). W must be a multiple of 512: other widths pad the tiled rows and
-# streaks appeared on characters and in the sky (3456x1440).
+# upscaled to 3440x1440). Both widths must be multiples of 512 and heights multiples of 32: other
+# sizes pad the tiled rows (streaks on characters and in the sky at 3456x1440) or garble every
+# render target (display 3840x1600 or a 1072/1608 height).
 # the display buffers (3840x2160) and the render size (2560x1440) the game picks for a PS4 Pro.
 # (address, expected bytes, imm32 offset, 'w' or 'h'): mov r32, imm32 in the display init.
 DISPLAY_SITES = [

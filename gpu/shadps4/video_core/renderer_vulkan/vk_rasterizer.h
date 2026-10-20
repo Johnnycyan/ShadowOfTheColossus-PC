@@ -138,6 +138,8 @@ private:
     bool BindResources(const Pipeline* pipeline);
     /// sotc: DLSS in place of the game's TAA dispatch (vk_rasterizer_dlss.cpp).
     bool DispatchDlssTaa(const Shader::Info& cs);
+    /// sotc: DLSS upscaling before the game's final composite draw (vk_rasterizer_dlss.cpp).
+    void DlssComposite(const GraphicsPipeline* pipeline);
 
     void BindVertexBuffers(const GraphicsPipeline* pipeline);
     void BindIndexBuffer(u32 index_offset = 0);
@@ -193,6 +195,7 @@ private:
 
     using ImageBindingInfo = std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc>;
     boost::container::static_vector<ImageBindingInfo, Shader::NUM_IMAGES> image_bindings;
+    boost::container::static_vector<ImageBindingInfo, Shader::NUM_IMAGES> fragment_image_bindings;
     bool attachment_feedback_loop{};
     bool needs_barrier{};
 };
